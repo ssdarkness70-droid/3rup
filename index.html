@@ -2908,6 +2908,80 @@
                 font-size: 0
             }
 
+            #account-box {
+                margin-bottom: 5px
+            }
+
+            #account-box .account-btn {
+                cursor: pointer;
+                display: inline-block;
+                height: 30px;
+                line-height: 30px;
+                padding: 0 10px;
+                text-align: center;
+                text-decoration: none;
+                background: #555;
+                border: 0;
+                font-weight: 300;
+                border-radius: 2px;
+                font-size: 12px;
+                font-family: ubuntu;
+                color: #fff;
+                margin: 3px;
+                text-transform: uppercase
+            }
+
+            #account-box .account-btn.google {
+                background: #4285F4
+            }
+
+            #account-box .account-btn.discord {
+                background: #5865F2
+            }
+
+            #account-box .account-btn:hover,
+            #account-box #account-logout:hover {
+                filter: brightness(1.15)
+            }
+
+            #account-box #account-name {
+                display: inline-block;
+                color: #fff;
+                font-size: 13px;
+                font-family: ubuntu;
+                margin: 3px;
+                max-width: 180px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                vertical-align: middle
+            }
+
+            #account-box #account-status {
+                text-align: center;
+                color: #aaa;
+                font-size: 11px;
+                font-family: ubuntu;
+                margin: 6px 3px 2px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                direction: ltr;
+                line-height: 1.4
+            }
+
+            #account-box #account-status #account-status-logout {
+                color: #e88;
+                cursor: pointer;
+                text-decoration: none;
+                margin-left: 6px;
+                font-size: 11px
+            }
+
+            #account-box #account-status #account-status-logout:hover {
+                text-decoration: underline
+            }
+
             #banner {
                 width: 300px;
                 height: 250px;
@@ -2954,7 +3028,7 @@
                 margin-left: 2px
             }
         </style>
-        <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
+        <script src="https://www.google.com/recaptcha/api.js?render=explicit" async defer></script>
         <script async="" src="https://www.googletagmanager.com/gtag/js?id=UA-140821828-1"></script>
         <script>
             window.dataLayer = window.dataLayer || [];
@@ -3256,13 +3330,29 @@
                 <div class="inputs-box">
                     <input class="menu-inputs" id="tag" placeholder="Tag">
                     <input class="menu-inputs" id="nick" placeholder="Nick">
-                    <input class="menu-inputs" id="arbSkin" placeholder="3rb Skin">
+                    <input class="menu-inputs" id="nick2" placeholder="Nick 2">
+                    <input class="menu-inputs" id="arbSkin" placeholder="3rb Skin" style="display: none;">
                     <input class="menu-inputs" id="skin" placeholder="Skin URL 1">
                     <input class="menu-inputs" id="skin2" placeholder="Skin URL 2">
                     <input class="menu-inputs" id="party-token" placeholder="Party code">
                     <button id="create-party" title="Create a party and copy its code">Create</button>
                     <button id="join-party" title="Join a party using a code">Join</button>
                     <button id="leave-party" title="Leave the current party" style="display: none;">Leave</button>
+                    <div id="account-box">
+                        <div id="account-login">
+                            <a class="account-btn google" href="php/Auth.php?provider=google" target="_blank" rel="opener" title="Login with Google">Google</a>
+                            <a class="account-btn discord" href="php/Auth.php?provider=discord" target="_blank" rel="opener" title="Login with Discord">Discord</a>
+                        </div>
+                        <div id="account-login2">
+                            <a class="account-btn google" href="php/Auth.php?provider=google" target="_blank" rel="opener" title="Login with Google - use a DIFFERENT account for Tab 2">G Tab2</a>
+                            <a class="account-btn discord" href="php/Auth.php?provider=discord" target="_blank" rel="opener" title="Login with Discord - use a DIFFERENT account for Tab 2">D Tab2</a>
+                        </div>
+                        <div id="account-status">
+                            <span id="account-status-info">Anonymous</span>
+                            <a href="#" id="account-status-logout" style="display: none;">Logout</a>
+                        </div>
+                        <div id="account-tab2" style="color:#aaa;font-size:11px;font-family:ubuntu;text-align:center;margin:2px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Tab1: none&nbsp;&nbsp;|&nbsp;&nbsp;Tab2: none</div>
+                    </div>
                     <select class="menu-inputs" id="servers">
                         <option value="">Select Server ...</option>
                     </select>
@@ -4150,7 +4240,6 @@
         </div>
         <div id="cf-turnstile-1"></div>
         <div id="cf-turnstile-2"></div>
-        <div id="cf-turnstile-3"></div>
         <canvas id="canvas"></canvas>
         <script>
             (function() {
