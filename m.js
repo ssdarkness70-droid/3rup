@@ -653,6 +653,7 @@
         nick: "profile " + this.selected,
         skin: "https://i.imgur.com/nRqSis7.png",
         skin2: "",
+        nick2: "",
         arbSkin: "",
       };
       if (!abs) {
@@ -660,6 +661,7 @@
       }
       Storage.set("profiles", "profile" + this.selected, abs);
       $("#nick").val(abs.nick);
+      $("#nick2").val(abs.nick2 || "");
       $("#skin").val(abs.skin);
       $("#skin2").val(abs.skin2 || "");
       $("#tag").val(this.tag);
@@ -703,6 +705,9 @@
       $("#nick").blur(() => {
         this.setNick($("#nick").val());
       });
+      $("#nick2").blur(() => {
+        this.setNick2($("#nick2").val());
+      });
       $("#arbSkin").blur(() => {
         this.setarbSkin();
       });
@@ -743,16 +748,19 @@
         nick: "profile " + this.selected,
         skin: "https://i.imgur.com/nRqSis7.png",
         skin2: "",
+        nick2: "",
         arbSkin: "",
       };
       if (!ze) {
         ze = nw;
       }
       $("#nick").val(ze.nick);
+      $("#nick2").val(ze.nick2 || "");
       $("#skin").val(ze.skin);
       $("#skin2").val(ze.skin2 || "");
       $("#arbSkin").val(ze.arbSkin);
-      Player.nick = "" === ze.nick ? "Unnamed Cell" : ze.nick;
+      Player.nick = "" === ze.nick ? "An unnamed cell" : ze.nick;
+      Player.nick2 = ze.nick2 || "";
       Player.skin = ze.skin;
       Player.skin2 = ze.skin2 || "";
       Storage.set("profiles", "profile" + this.selected, ze);
@@ -768,6 +776,7 @@
         nick: "profile " + this.selected,
         skin: "https://i.imgur.com/nRqSis7.png",
         skin2: "",
+        nick2: "",
         arbSkin: "",
       };
       if (!ht) {
@@ -775,7 +784,23 @@
       }
       ht.nick = jl;
       Storage.set("profiles", "profile" + this.selected, ht);
-      Player.nick = "" === jl ? "Unnamed Cell" : jl;
+      Player.nick = "" === jl ? "An unnamed cell" : jl;
+    }
+    static ["setNick2"](jl) {
+      let ht = Storage.get("profiles", "profile" + this.selected);
+      const o = {
+        nick: "profile " + this.selected,
+        skin: "https://i.imgur.com/nRqSis7.png",
+        skin2: "",
+        nick2: "",
+        arbSkin: "",
+      };
+      if (!ht) {
+        ht = o;
+      }
+      ht.nick2 = jl;
+      Storage.set("profiles", "profile" + this.selected, ht);
+      Player.nick2 = jl;
     }
     static ["setarbSkin"]() {
       var uu = $("#arbSkin").val();
@@ -788,6 +813,7 @@
           arbSkin: uu,
           skin: Renderer.code2Url(Renderer.getImgurCode(yg)),
           arbSkin: uu,
+          nick2: "",
         };
         Player.skin = Renderer.code2Url(Renderer.getImgurCode(yg));
         Storage.set("profiles", "profile" + this.selected, agj);
@@ -801,6 +827,7 @@
         nick: "profile " + this.selected,
         skin: "https://i.imgur.com/nRqSis7.png",
         skin2: "",
+        nick2: "",
         arbSkin: "",
       };
       if (!jg) {
@@ -1541,10 +1568,18 @@
       Settings.pairCamera = "off" === Settings.pairCamera ? ("off" !== bg && bg) || "on" : "off";
     }
     static ["respawn"]() {
+      // Respawn every dead tab that has a live connection - Tab 1 first,
+      // then Tab 2 if it is connected. This keeps the two-tab pair together
+      // from a single quick-respawn key press.
       const ie = setInterval(() => {
         if (WsConnection.connected) {
-          PacketSender.spawn();
           clearInterval(ie);
+          if (!Player._isAlive) {
+            PacketSender.spawn(1);
+          }
+          if (WsConnection.connected2 && !Player._isAlive2) {
+            PacketSender.spawn(2);
+          }
         }
       }, 100);
     }
@@ -1581,7 +1616,7 @@
     static ["fetchServerinfo"]() {
       let rp;
       let aan = new XMLHttpRequest();
-      aan.open("GET", "https://beta.3rb.io/php/Servers.php", false);
+      aan.open("GET", "https://3rb.io/php/Servers.php", false);
       aan.send();
       try {
         rp = JSON.parse(aan.responseText);
@@ -2451,7 +2486,7 @@
       }
       return fi;
     }
-    static ["gameChat"](dg, zf, ais) {
+    static ["gameChat"](dg, zf, ais, mt) {
       // Build up a nick->id memory from every attributed message we see -
       // the invite notification itself often arrives as a system-style
       // message (id1 <= 0, not attributed to the inviter), and the inviter
@@ -2463,6 +2498,22 @@
         return;
       }
       const akh = this.alert(dg, zf, "game");
+      if (akh) {
+        // Render the sender's real color, a crown for VIPs, and gray for
+        // muted senders - the same fields the real client uses. mt comes
+        // from handleChat's packet parse (opcode 86).
+        const nickEl = akh.find(".nick");
+        if (mt && nickEl.length) {
+          if (mt.muted) {
+            nickEl.css("color", "#7f7f7f");
+          } else if (mt.vip) {
+            nickEl.prepend("👑 ");
+          }
+          if ("number" === typeof mt.r) {
+            nickEl.css("color", "#" + [mt.r, mt.g, mt.b].map((c) => ("0" + c.toString(16)).slice(-2)).join(""));
+          }
+        }
+      }
       if (0 < ais && akh) {
         akh.find(".nick").on("contextmenu", (ahp) => {
           ahp.preventDefault();
@@ -2951,6 +3002,14 @@
     static ["enter"]() {
       if (this.isOpened) {
         if (this.isFocused) {
+          if (!Account.loggedIn) {
+            this.input.val("");
+            this.input.blur();
+            this.container.hide();
+            this.isOpened = false;
+            Notifications.warn("Chat", "You must be registered and at least level 5 to use the chat");
+            return;
+          }
           let afp = this.input.val();
           if (0 < afp.length && 100 < afp.length) {
             afp = afp.substring(0, 100);
@@ -3224,7 +3283,14 @@
     }
     static ["play"]() {
       this.close();
-      PacketSender.spawn();
+      // Spawn both tabs: Tab 1 always, Tab 2 as well when its connection is
+      // live. A single Play click brings the whole pair back.
+      if (!Player._isAlive) {
+        PacketSender.spawn(1);
+      }
+      if (WsConnection.connected2 && !Player._isAlive2) {
+        PacketSender.spawn(2);
+      }
     }
     static ["closeSubMenus"]() {
       Inputs.close();
@@ -3601,6 +3667,7 @@
         y: 0x64,
       };
       this._nick = $("#nick").val();
+      this._nick2 = $("#nick2").val();
       this._arbSkin = $("#arbSkin").val();
       this._skin = Renderer.getImgurCode($("#skin").val());
       this._skin2 = Renderer.getImgurCode($("#skin2").val());
@@ -3829,6 +3896,13 @@
     static get ["nick"]() {
       return this._nick.substring(0, 15);
     }
+    static set ["nick2"](va) {
+      this._nick2 = va;
+      RelaySender.nick();
+    }
+    static get ["nick2"]() {
+      return this._nick2 ? this._nick2.substring(0, 15) : "";
+    }
     static set ["arbSkin"](aek) {
       this._arbSkin = aek;
     }
@@ -3903,7 +3977,8 @@
       return ":party" === MainMenu.gMode ? ju + this.colorHex : ju;
     }
     static get ["worldID2"]() {
-      let agw = this._nick.substring(this._nick.indexOf("}") + 1);
+      let agw = (this._nick2 || this._nick);
+      agw = agw.substring(agw.indexOf("}") + 1);
       agw = agw.replace("%*^", "");
       return ":party" === MainMenu.gMode ? agw + this.colorHex2 : agw;
     }
@@ -3935,6 +4010,7 @@
       this.isAlive = 0;
       this.mass = 0;
       this.nick = "";
+      this.nick2 = "";
       this.skin = "";
       this.skin2 = "";
       this.skin2Color = "";
@@ -4380,7 +4456,8 @@
         return false;
       }
       let pk = cn.nick.substring(cn.nick.indexOf("}") + 1) || "";
-      const xb = this.nickCaches.get(pk) || this.newNickCache(pk);
+      const key = (cn.vip ? "v:" : "") + pk;
+      const xb = this.nickCaches.get(key) || this.newNickCache(key);
       xb.lastUsedAt = GameLoop.time;
       const gc = 50 > this.getScreenRadius(cn.animRadius) ? 0 : 1;
       const uj = xb.level[gc];
@@ -4390,18 +4467,21 @@
       const ac = this.getNewCanvas();
       const xd = ac.getContext("2d");
       const lx = (50 * (gc + 1) * Theme.cellNickSize) / 100;
+      // VIP cells render their name in gold (no crown in-game - the crown
+      // stays in chat), matching the real client (cell flags bit 256 = vip).
+      const disp = pk;
       ac.height = 0 | (1.2 * lx);
-      ac.width = 0 | (1.2 * this.getNickWidth(pk, lx));
+      ac.width = 0 | (1.2 * this.getNickWidth(disp, lx));
       xd.font = "700 " + (0 | lx) + "px " + Theme.nickFont;
       xd.textBaseline = "middle";
       xd.textAlign = "center";
       if ("normal" === Settings.nickShadow) {
-        xd.strokeStyle = Theme.nickStrokeColor;
+        xd.strokeStyle = cn.vip ? "#6b4f00" : Theme.nickStrokeColor;
         xd.lineWidth = 6 * (gc + 1);
-        xd.strokeText(pk, ac.width >> 1, ac.height >> 1);
+        xd.strokeText(disp, ac.width >> 1, ac.height >> 1);
       } else {
         if ("performance" === Settings.nickShadow) {
-          xd.fillStyle = Theme.nickStrokeColor;
+          xd.fillStyle = cn.vip ? "#6b4f00" : Theme.nickStrokeColor;
           xd.globalAlpha = 0.75;
           const aga = 0 | (ac.width / 1.2);
           const xj = 0 | (ac.height / 1.2);
@@ -4409,8 +4489,8 @@
           xd.globalAlpha = 1;
         }
       }
-      xd.fillStyle = Theme.nickColor;
-      xd.fillText(pk, ac.width >> 1, ac.height >> 1);
+      xd.fillStyle = cn.vip ? "#fbb040" : Theme.nickColor;
+      xd.fillText(disp, ac.width >> 1, ac.height >> 1);
       xb.level[gc] = ac;
       return ac;
     }
@@ -5044,21 +5124,28 @@
       this.recycleLocks = new Set();
       this.backupPhase = "Waiting";
       this.backupPhaseSince = Date.now();
+      this.tab1Authed = false;
+      this.tab2Queued = false;
+      this.tab2GuestKicks = 0;
+      this.tab2Gen = (this.tab2Gen || 0) + 1;
       this.registerKeyBindings();
       this.startConnectionStatus();
       window.DRAG_PLUS = {
-        backupStatus: () => this.statusSnapshot(),
+        status: () => this.statusSnapshot(),
         kill: () => this.recycleActiveCell(),
-        promote: (tab) => this.promoteBackup(Number(tab), "console request"),
+        accounts: () => Account.slots(),
+        setAccount: (slot, uuid, accessToken) => Account.setSlot(slot, uuid, accessToken),
+        clearAccounts: () => Account.clearSlots(),
       };
       WorldData.init();
     }
-    // Each tab needs its OWN Turnstile widget/container. Rendering ".cf-turnstile"
-    // twice targets the same single element, so the 2nd render() silently fails
-    // to bind and tab 2's promise never resolves -> handshake2 never completes
-    // -> ws2 never sends its auth packet -> server drops it as idle.
+    // Each tab needs its OWN reCAPTCHA widget/container. Rendering the same
+    // container twice targets the same single element, so the 2nd render()
+    // silently fails to bind and tab 2's promise never resolves -> handshake2
+    // never completes -> ws2 never sends its auth packet -> server drops it as
+    // idle.
     // The captcha queue serializes token requests so the standby tab never
-    // renders a third Turnstile widget while an earlier one is still pending.
+    // renders a third widget while an earlier one is still pending.
     static ["getToken"](alq) {
       const task = this.captchaQueue.then(() => this._getToken(alq));
       this.captchaQueue = task.catch(() => {});
@@ -5069,61 +5156,59 @@
         if (alq <= 1) {
           Notifications.warn("Drag+", "Solving captcha, please wait..");
         }
-        if (!window.turnstile) {
-          return dq(new Error("Turnstile SDK not loaded"));
+        if (!window.grecaptcha || !window.grecaptcha.render) {
+          return dq(new Error("reCAPTCHA SDK not loaded"));
         }
         // remember whoever is currently waiting for THIS tab's token
         this.pendingResolvers[alq] = { resolve: lv, reject: dq };
 
         const mu = alq === 1 ? "#cf-turnstile-1" : alq === 2 ? "#cf-turnstile-2" : "#cf-turnstile-3";
 
-        if (undefined !== this.widgetIds[alq]) {
-          // A widget from a PREVIOUS connect already lives in this
-          // container. reset() alone doesn't reliably re-trigger the
-          // callback for a managed/invisible challenge - on reconnect this
-          // left the promise hanging forever. remove() fully tears the old
-          // widget down so the container is empty again and render() below
-          // can cleanly create a fresh one - the same path that already
-          // works for the very first connect. Wrapped in try/catch since a
-          // widget Cloudflare already auto-expired/GC'd internally could
-          // make remove() itself throw, which would otherwise silently
-          // reject this whole getToken() call before render() ever runs.
-          try {
-            window.turnstile.remove(this.widgetIds[alq]);
-          } catch (dg) {}
-          delete this.widgetIds[alq];
-        }
-
-        const aai = window.turnstile.render(mu, {
-          sitekey: "0x4AAAAAADre-KxtZJu7P6nr",
-          callback: (xs, abv) => {
-            const rz = this.pendingResolvers[alq];
-            if (!abv && !xs) {
-              return Notifications.warn("Drag+", "Unexpected response from turnstile API.");
-            }
-            if ($("#loading-screen") && $("#loading-screen").fadeOut(500)) {
-              $("#loading-screen").remove();
-            }
-            PacketSender.handleDisabledProperty(false);
-            Notifications.warn("Drag+", "Captcha has been solved successfully for Tab " + alq);
-            if (rz) {
-              return rz.resolve(xs);
-            }
-          },
-          "expired-callback": () => {
-            const rz = this.pendingResolvers[alq];
-            if (rz) {
-              rz.reject(new Error("Turnstile token expired for tab " + alq));
-            }
-          },
-          "error-callback": () => {
-            const rz = this.pendingResolvers[alq];
-            if (rz) {
-              rz.reject(new Error("Turnstile error for tab " + alq));
-            }
-          },
-        });
-        this.widgetIds[alq] = aai;
+        // The 2026 protocol server validates Google reCAPTCHA tokens
+        // (sitekey of 3rb.io itself). One invisible widget per tab: render
+        // it on first use, reset + re-execute on later reconnects.
+        const run = () => {
+          let wid = this.widgetIds[alq];
+          if (undefined === wid) {
+            wid = window.grecaptcha.render(document.querySelector(mu), {
+              sitekey: "6Lea_z0tAAAAAPeJ6JiJnnKGly6s-zk4u8bwJeJ3",
+              size: "invisible",
+              callback: (xs) => {
+                const rz = this.pendingResolvers[alq];
+                if (!xs) {
+                  return Notifications.warn("Drag+", "Unexpected response from reCAPTCHA API.");
+                }
+                if ($("#loading-screen") && $("#loading-screen").fadeOut(500)) {
+                  $("#loading-screen").remove();
+                }
+                PacketSender.handleDisabledProperty(false);
+                Notifications.warn("Drag+", "Captcha has been solved successfully for Tab " + alq);
+                if (rz) {
+                  return rz.resolve(xs);
+                }
+              },
+              "expired-callback": () => {
+                const rz = this.pendingResolvers[alq];
+                if (rz) {
+                  rz.reject(new Error("reCAPTCHA token expired for tab " + alq));
+                }
+              },
+              "error-callback": () => {
+                const rz = this.pendingResolvers[alq];
+                if (rz) {
+                  rz.reject(new Error("reCAPTCHA error for tab " + alq));
+                }
+              },
+            });
+            this.widgetIds[alq] = wid;
+          } else {
+            try {
+              window.grecaptcha.reset(wid);
+            } catch (dg) {}
+          }
+          window.grecaptcha.execute(wid);
+        };
+        window.grecaptcha.ready(run);
       });
     }
     static ["connect"](hy, aff) {
@@ -5135,14 +5220,85 @@
         this.resetData();
         this.ip = hy;
         this.intentionalDisconnect = false;
+        this.tab1Authed = false;
+        this.tab2Queued = false;
+        this.tab2GuestKicks = 0;
+        this.tab2Gen = (this.tab2Gen || 0) + 1;
         this.createSocket(1);
-        this.createSocket(2);
-        console.log("Connecting to: " + hy);
+        console.log("Connecting to: " + hy + " (Tab 1 first, Tab 2 follows after Tab 1 auth)");
       }
+    }
+    static ["queueTab2"]() {
+      // The 2026 game server now kicks every other connection from the same
+      // IP ("New connection from this browser") unless the existing
+      // connections are authenticated accounts. Tab 2 therefore never opens
+      // until Tab 1 has finished its full handshake AND carries a valid
+      // account game token, so the two sockets can never kick each other
+      // in a loop. If no account is logged in yet, keep retrying so Tab 2
+      // connects as soon as the user logs in.
+      if (this.tab2Queued || this.ws2) return;
+      this.tab2Queued = true;
+      this.tab2WarnedGuest = false;
+      const gen = this.tab2Gen;
+      const attempt = () => {
+        if (this.tab2Gen !== gen || this.intentionalDisconnect || !this.ip) {
+          if (this.tab2Gen === gen) this.tab2Queued = false;
+          return;
+        }
+        if (this.ws2) return;
+        if (!this.tab1Authed || !this.connected) {
+          setTimeout(attempt, 600);
+          return;
+        }
+        if (!Account.loginStringFor(1)) {
+          if (!this.tab2WarnedGuest) {
+            this.tab2WarnedGuest = true;
+            Notifications.warn("Drag+", "3rb.io now blocks two guest tabs from the same IP. Log in with an account to enable Tab 2.");
+          }
+          setTimeout(attempt, 3000);
+          return;
+        }
+        if (!Account.gameToken1) {
+          Account.fetchSlotToken(1);
+          setTimeout(attempt, 700);
+          return;
+        }
+        this.createSocket(2);
+      };
+      setTimeout(attempt, 1500);
+    }
+    static ["retryTab2Later"]() {
+      this.tab2Queued = false;
+      if (this.intentionalDisconnect || !this.ip) return;
+      if (!Account.loginStringFor(2) && 3 <= (this.tab2GuestKicks || 0)) {
+        Notifications.warn("Drag+", "Tab 2 keeps getting kicked as guest - log in with a second account to keep Tab 2 alive.");
+        return;
+      }
+      this.queueTab2();
     }
     static ["createSocket"](slot) {
       if (!this.ip) return null;
-      const socket = new WebSocket(this.ip, "ghmarab");
+      // 2026 proto-map negotiation state (see handleProto). Each socket starts
+      // "waiting" for the server's MapInit packet; every packet we send while
+      // waiting is queued and flushed once the mapping is resolved.
+      this._protoWaiting = this._protoWaiting || {};
+      this._protoQueue = this._protoQueue || {};
+      this._protoSend = this._protoSend || {};
+      this._protoRecv = this._protoRecv || {};
+      this._protoWaiting[slot] = true;
+      this._protoQueue[slot] = [];
+      this._protoSend[slot] = null;
+      this._protoRecv[slot] = null;
+      clearTimeout(this["_protoTimer" + slot]);
+      this["_protoTimer" + slot] = setTimeout(() => {
+        if (this._protoWaiting && this._protoWaiting[slot]) {
+          this._protoWaiting[slot] = false;
+          this._protoSend[slot] = null;
+          this._protoRecv[slot] = null;
+          this.flushProtoQueue(slot);
+        }
+      }, 700);
+      const socket = new WebSocket(this.ip, "d1elnjtfbyzq7a");
       if (1 === slot) this.ws = socket;
       else if (2 === slot) this.ws2 = socket;
       else this.ws3 = socket;
@@ -5153,23 +5309,16 @@
       socket.binaryType = "arraybuffer";
       socket.onopen = () => this.onOpen(slot);
       socket.onmessage = (ev) => this.onMessage(ev, slot);
-      socket.onclose = () => this.onClose(slot, socket);
+      socket.onclose = (ev) => this.onClose(slot, socket, ev);
       socket.onerror = () => this.onError(slot);
     }
-    // Standby Tab 3 opens only once both active tabs are authenticated, so
-    // the three Turnstile challenges never need to overlap.
+    // Standby Tab 3 was removed: the new 3rb.io server kicks any extra
+    // connection from the same IP, so a third socket can never survive.
     static ["scheduleBackup"](delay = 1500) {
-      clearTimeout(this.backupRetryTimer);
-      if (this.intentionalDisconnect || !this.ip || !this.connected || !this.connected2 || this.ws3Open || this.backupConnecting) return;
-      this.backupRetryTimer = setTimeout(() => this.connectBackup(), delay);
+      return false;
     }
     static ["connectBackup"]() {
-      if (this.intentionalDisconnect || !this.ip || !this.connected || !this.connected2 || this.ws3Open || this.backupConnecting) return;
-      this.backupConnecting = true;
-      this.backupReady = false;
-      this.setBackupPhase("Connecting");
-      this.createSocket(3);
-      this.connectionStatus();
+      return false;
     }
     static ["disconnect"]() {
       this.intentionalDisconnect = true;
@@ -5218,12 +5367,23 @@
     }
     static ["send"](acr, yj) {
       this.packetCount.out++;
+      if (this._protoWaiting && this._protoWaiting[yj]) {
+        (this._protoQueue[yj] = this._protoQueue[yj] || []).push(acr);
+        return;
+      }
+      let payload = acr;
+      if (this._protoSend && this._protoSend[yj]) {
+        const remap = new Uint8Array(acr.byteLength);
+        remap.set(new Uint8Array(acr));
+        remap[0] = this._protoSend[yj][remap[0]];
+        payload = remap.buffer;
+      }
       if (1 === yj && this.wsOpen) {
-        this.ws.send(acr);
+        this.ws.send(payload);
       } else if (2 === yj && this.ws2Open) {
-        this.ws2.send(acr);
+        this.ws2.send(payload);
       } else if (3 === yj && this.ws3Open) {
-        this.ws3.send(acr);
+        this.ws3.send(payload);
       }
     }
     static ["onOpen"](nq) {
@@ -5234,48 +5394,97 @@
     }
     static ["onMessage"](alh, adu) {
       this.packetCount["in"]++;
-      // Tab 3 is a transport-only hot standby. Its handshake is completed in
-      // onOpen(), but it must not feed world packets into the two-tab parser:
-      // that parser intentionally treats every non-Tab-1 packet as Tab 2.
-      // Letting standby traffic through would overwrite Tab 2's rendered state.
+      // 2026 proto-map negotiation: the server may open with a MapInit packet
+      // (opcode 240, 546 bytes, byte[1]===1). While we haven't resolved it,
+      // check the FIRST incoming frame - if it's MapInit, apply the opcode
+      // remap tables and ack; if it's anything else the server is legacy and
+      // we flush the queued handshake untouched. A consumed MapInit frame is
+      // not fed into the normal parser.
+      if (this._protoWaiting && this._protoWaiting[adu] && this.handleProto(alh, adu)) {
+        return;
+      }
+      // Slot 3 no longer exists (removed): only tabs 1 and 2 are parsed.
       if (3 === adu) return;
       PacketParser.getBuffer(alh, adu);
     }
-    static ["onClose"](cq, socket) {
+    static ["handleProto"](alh, adu) {
+      const raw = new Uint8Array(alh.data);
+      if (240 !== raw[0] || 546 !== raw.length || 1 !== raw[1]) {
+        // Legacy server: no opcode remapping. Flush what we queued, then let
+        // this first frame be parsed normally.
+        this._protoWaiting[adu] = false;
+        this._protoSend[adu] = null;
+        this._protoRecv[adu] = null;
+        clearTimeout(this["_protoTimer" + adu]);
+        this.flushProtoQueue(adu);
+        console.log("[proto] Tab " + adu + ": legacy (no opcode map)");
+        return false;
+      }
+      // MapInit: sendMap[r] = raw[18+r]; recvMap[raw[274+r]] = r.
+      const sm = new Uint8Array(256);
+      const rm = new Uint8Array(256);
+      for (let r = 0; r < 256; r++) {
+        sm[r] = raw[18 + r];
+        rm[raw[274 + r]] = r;
+      }
+      this._protoSend[adu] = sm;
+      this._protoRecv[adu] = rm;
+      this._protoWaiting[adu] = false;
+      clearTimeout(this["_protoTimer" + adu]);
+      console.log("[proto] Tab " + adu + ": MapInit applied, opcode remap active");
+      // Ack with the raw 17-byte MapAck (opcode 241 + raw[530..546)) - it is
+      // sent directly, NOT through send(), so the map itself never remaps it.
+      const ack = new Uint8Array(17);
+      ack[0] = 241;
+      ack.set(raw.subarray(530, 546), 1);
+      const ws = 1 === adu ? this.ws : 2 === adu ? this.ws2 : this.ws3;
+      if (ws && ws.readyState === ws.OPEN) {
+        ws.send(ack.buffer);
+      }
+      this.flushProtoQueue(adu);
+      return true;
+    }
+    static ["flushProtoQueue"](adu) {
+      const q = this._protoQueue[adu] || [];
+      this._protoQueue[adu] = [];
+      for (const p of q) {
+        this.send(p, adu);
+      }
+    }
+    static ["onClose"](cq, socket, ev) {
       const numericTab = Number(cq);
       const current = numericTab === 1 ? this.ws : numericTab === 2 ? this.ws2 : this.ws3;
       if (current !== socket) return false;
       PacketSender.stopPingLoop(numericTab);
+      clearTimeout(this["_protoTimer" + numericTab]);
       if (this.intentionalDisconnect) return false;
-      if (numericTab === 3) {
-        this.ws3 = null;
-        this.connected3 = false;
-        this.backupReady = false;
-        this.backupConnecting = false;
-        this.setBackupPhase("Retrying");
-        this.scheduleBackup(1800);
-        this.connectionStatus();
-        return true;
-      }
       if (numericTab !== 1 && numericTab !== 2) return false;
+      const reason = ev && ev.reason ? String(ev.reason) : "";
+      if (/new connection/i.test(reason)) {
+        Notifications.warn("Drag+", "Tab " + numericTab + " was replaced by another connection from this IP (new 3rb.io rule)");
+        if (2 === numericTab) {
+          this.tab2GuestKicks = (this.tab2GuestKicks || 0) + 1;
+        }
+      }
       if (numericTab === 1) {
         this.ws = null;
         this.connected = false;
+        this.tab1Authed = false;
       } else {
         this.ws2 = null;
         this.connected2 = false;
       }
       PacketParser.clearCells(numericTab);
       Notifications.alert("Drag+", "Tab " + numericTab + " disconnected");
-      console.log("Websocket " + numericTab + " closed");
-      // No auto respawn: the tab reconnects its transport but stays idle
-      // until the user presses Play. The standby is only promoted manually
-      // via K / /kill.
-      setTimeout(() => {
-        const key = numericTab === 1 ? "ws" : "ws2";
-        if (this.intentionalDisconnect || !this.ip || this[key]) return;
-        this.createSocket(numericTab);
-      }, 1000);
+      console.log("Websocket " + numericTab + " closed" + (reason ? " (" + reason + ")" : ""));
+      if (1 === numericTab) {
+        setTimeout(() => {
+          if (this.intentionalDisconnect || !this.ip || this.ws) return;
+          this.createSocket(1);
+        }, 1000);
+      } else {
+        this.retryTab2Later();
+      }
       if (!(this.wsOpen || this.ws2Open)) {
         MainMenu.open();
       }
@@ -5286,15 +5495,10 @@
       if (!(this.wsOpen || this.ws2Open)) {
         MainMenu.open();
       }
-      if (3 === alo) {
-        this.connected3 = false;
-        this.backupReady = false;
-        this.backupConnecting = false;
-        this.setBackupPhase("Retrying");
-        this.scheduleBackup(1800);
-      } else if (1 === alo) {
+      if (1 === alo) {
         this.connected = false;
-      } else {
+        this.tab1Authed = false;
+      } else if (2 === alo) {
         this.connected2 = false;
       }
       console.log("Websocket " + alo + " errored out!");
@@ -5320,9 +5524,8 @@
       PacketParser.clearCells(tab);
     }
     // ------------------------------------------------------------------
-    // Standby Tab 3 promotion (always on): a hot standby tab is
-    // authenticated and kept in the background. K or /kill manually
-    // promotes it; a death or disconnect automatically promotes it.
+    // Standby Tab 3 was removed: only Tab 1 and Tab 2 remain. These stubs
+    // keep the old hotkeys and call sites harmless.
     // ------------------------------------------------------------------
     static ["setBackupPhase"](phase) {
       this.backupPhase = String(phase || "Waiting");
@@ -5330,92 +5533,29 @@
       this.connectionStatus();
     }
     static ["promoteBackup"](tab, reason = "Standby promotion") {
-      tab = Number(tab);
-      if ((tab !== 1 && tab !== 2) || !this.backupReady || !this.ws3Open || this.promotionInFlight) return false;
-      const promoted = this.ws3;
-      const key = tab === 2 ? "ws2" : "ws";
-      const retired = this[key];
-      this.promotionInFlight = tab;
-      this.pendingPromotions.delete(tab);
-      this.pendingRespawns.delete(tab);
-      PacketSender.stopPingLoop(tab);
-      PacketSender.stopPingLoop(3);
-      if (retired && retired !== promoted) {
-        retired.onopen = retired.onmessage = retired.onclose = retired.onerror = null;
-        try {
-          retired.close(1000, "Drag+ active slot recycled");
-        } catch (e) {}
-      }
-      promoted.onopen = promoted.onmessage = promoted.onclose = promoted.onerror = null;
-      this[key] = promoted;
-      if (tab === 1) this.connected = true; else this.connected2 = true;
-      this.ws3 = null;
-      this.connected3 = false;
-      this.backupReady = false;
-      this.backupConnecting = false;
-      this.setBackupPhase("Replacing");
-      PacketParser.clearCells(tab);
-      if (tab === 1) Player._isAlive = false; else Player._isAlive2 = false;
-      this.bindSocket(promoted, tab);
-      PacketSender.initPingLoop(tab);
-      Player.typeID = tab;
-      Notifications.alert("Drag+", "Standby Tab 3 promoted into Tab " + tab + ": " + reason);
-      const spawn = () => PacketSender.spawnTab(tab);
-      setTimeout(spawn, 100);
-      setTimeout(() => {
-        const alive = tab === 2 ? Player._isAlive2 : Player._isAlive;
-        if (!alive) spawn();
-      }, 650);
-      this.scheduleBackup(900);
-      setTimeout(() => {
-        if (this.promotionInFlight === tab) this.promotionInFlight = 0;
-        this.pumpPromotionQueue();
-        this.connectionStatus();
-      }, 1500);
-      this.connectionStatus();
-      return true;
+      // Standby Tab 3 was removed (the new server kicks a third connection).
+      return false;
     }
     static ["queuePromotion"](tab, reason = "Playable tab died") {
-      tab = Number(tab);
-      if ((tab !== 1 && tab !== 2) || !this.ip) return false;
-      this.pendingPromotions.add(tab);
-      this.lastPromotionReason = reason;
-      setTimeout(() => this.pumpPromotionQueue(), 180);
-      this.connectionStatus();
-      return true;
+      return false;
     }
     static ["pumpPromotionQueue"]() {
-      if (this.promotionInFlight) return false;
-      for (const tab of [...this.pendingPromotions]) {
-        const alive = tab === 2 ? Player._isAlive2 : Player._isAlive;
-        if (alive) {
-          this.pendingPromotions.delete(tab);
-          continue;
-        }
-        if (!this.backupReady || !this.ws3Open) {
-          this.scheduleBackup(0);
-          return false;
-        }
-        return this.promoteBackup(tab, this.lastPromotionReason || "Playable tab died");
-      }
       return false;
     }
     static ["recycleActiveCell"]() {
+      // Standby Tab 3 was removed: K / /kill now just respawns the active
+      // tab's cell instead of promoting a hidden third socket.
       const tab = Number(Player.typeID || 1);
       const alive = tab === 2 ? Player._isAlive2 : Player._isAlive;
       if (!alive) {
         Notifications.warn("Drag+", "Tab " + tab + " is not alive.");
         return false;
       }
-      if (!this.backupReady || !this.ws3Open) {
-        Notifications.warn("Drag+", "Standby Tab 3 is not ready yet; kill/recycle was not performed.");
-        return false;
-      }
       if (this.recycleLocks.has(tab)) return false;
       this.recycleLocks.add(tab);
-      const promoted = this.promoteBackup(tab, "manual K /kill recycle");
+      PacketSender.spawnTab(tab);
       setTimeout(() => this.recycleLocks.delete(tab), 1800);
-      return promoted;
+      return true;
     }
     static ["statusSnapshot"]() {
       const tabStatus = (socket, connected, alive, pending) => {
@@ -5425,20 +5565,10 @@
         if (socket.readyState === WebSocket.OPEN) return connected ? (pending ? "Spawning" : "Ready") : "Verifying";
         return "Reconnecting";
       };
-      let tab3 = "Waiting";
-      if (this.backupReady && this.ws3Open) tab3 = "Ready";
-      else if (this.ws3 && this.ws3.readyState === WebSocket.CONNECTING) tab3 = "Connecting";
-      else if (this.ws3Open) tab3 = "Verifying";
-      else if (this.backupConnecting) tab3 = "Connecting";
-      else if (this.connected && this.connected2) tab3 = this.backupPhase || "Replacing";
       return {
         activeTab: Player.typeID,
         tab1: tabStatus(this.ws, this.connected, Player._isAlive, this.pendingRespawns.has(1)),
         tab2: tabStatus(this.ws2, this.connected2, Player._isAlive2, this.pendingRespawns.has(2)),
-        tab3,
-        standbyReady: Boolean(this.backupReady && this.ws3Open),
-        pendingPromotions: [...this.pendingPromotions],
-        ws3: this.ws3 ? { readyState: this.ws3.readyState, open: this.ws3Open } : null,
       };
     }
     static ["connectionStatus"]() {
@@ -5447,21 +5577,20 @@
       if (!hud && document.body) {
         hud = document.createElement("div");
         hud.id = "drag-plus-connection-status";
-        hud.style.cssText = "position:fixed;right:10px;top:205px;z-index:2147483000;min-width:310px;max-width:calc(100vw - 20px);box-sizing:border-box;color:#f1f1f1;background:rgba(5,5,9,.9);border:1px solid rgba(255,255,255,.22);border-radius:6px;padding:6px 8px;font:11px/1.3 Arial,sans-serif;pointer-events:auto;white-space:normal;text-align:right;text-shadow:0 1px 2px #000;box-shadow:0 4px 16px rgba(0,0,0,.28)";
-        hud.title = "Standby Tab 3 hot backup: K or /kill manually promotes it.";
-        hud.innerHTML = '<div data-dragplus-role="status" style="white-space:nowrap"></div>';
-        const stopHudEvent = event => event.stopPropagation();
-        for (const eventName of ["pointerdown", "mousedown", "mouseup", "touchstart", "touchend", "keydown", "keyup"]) {
-          hud.addEventListener(eventName, stopHudEvent);
-        }
+        hud.style.cssText = "position:fixed;right:5px;z-index:2147483000;text-align:center;font-family:ubuntu,sans-serif;font-size:11px;color:rgba(255,255,255,.75);pointer-events:none;white-space:nowrap;text-shadow:0 1px 2px #000;padding-bottom:3px";
+        hud.title = "Drag+ Multibox - Tab 1 and Tab 2 connection status.";
         document.body.appendChild(hud);
       }
       if (hud) {
-        hud.style.top = "205px";
-        const line = hud.querySelector('[data-dragplus-role="status"]');
-        if (line) {
-          line.textContent = "Drag+ Backup | Tab 1: " + status.tab1 + " | Tab 2: " + status.tab2 + " | Standby 3: " + status.tab3;
+        const restartEl = document.getElementById("server-restart-countdown");
+        if (restartEl) {
+          const restartBottom = parseInt(window.getComputedStyle(restartEl).bottom) || 235;
+          hud.style.bottom = (restartBottom + 20) + "px";
+        } else {
+          hud.style.bottom = "255px";
         }
+        hud.style.width = (Minimap.size || 200) + "px";
+        hud.textContent = "Tab1:" + status.tab1 + " | Tab2:" + status.tab2;
       }
       return status;
     }
@@ -5514,7 +5643,12 @@
     }
     static ["parse"](amd, ii) {
       const aam = new DataReader(amd);
-      const ahy = aam.readUInt8();
+      let ahy = aam.readUInt8();
+      // 2026 proto-map: incoming opcodes are remapped through the receive
+      // table once the server negotiated a map for this socket.
+      if (WsConnection._protoRecv && WsConnection._protoRecv[ii]) {
+        ahy = WsConnection._protoRecv[ii][ahy];
+      }
       if (16 === ahy) {
         this.worldUpdate(aam, ii);
       } else if (17 === ahy) {
@@ -5535,6 +5669,10 @@
         this.handlePartyCode(aam);
       } else if (87 === ahy) {
         this.handleParty(aam);
+      } else if (88 === ahy && 1 === ii) {
+        this.handleLevel(aam);
+      } else if (154 === ahy && 1 === ii) {
+        this.handleSweets(aam);
       }
       if (86 === ahy && 1 === ii) {
         this.handleChat(aam);
@@ -5566,6 +5704,21 @@
       if (aia && PacketSender.chekConnection(2)) {
         PacketSender.joinParty(fg, 2);
       }
+    }
+    static ["handleSweets"](akl) {
+      // Opcode 154: sweet pickup (uint16 count + x/y). Track the running
+      // total for the status line; refresh is throttled by updateUI call.
+      const gained = akl.readUInt16();
+      if (0 < gained) {
+        Account.sweets += gained;
+        Account.updateUI();
+      }
+    }
+    static ["handleLevel"](ajz) {
+      // Opcode 88: server pushes the account's total XP (uint32, little
+      // endian) + optional bonus coins (uint8 flag + uint32). We only need
+      // the XP to track the current level and detect level-ups.
+      Account.setXp(ajz.readUInt32());
     }
     static ["handleParty"](akb) {
       const tc = akb.readUInt16();
@@ -5608,18 +5761,25 @@
       }
     }
     static ["handleChat"](yn) {
-      // id1 is the sender's real player id (matches cell.ownerId/WorldData.pID
-      // namespace) - needed so a chat message's nick can be right-clicked
-      // into the same party-invite menu as a map cell.
+      // 2026 chat packet: int32 senderId, int32 target, uint8 r, string a,
+      // uint8x3 color, string msg, string nick, string l, uint8 c, uint8 u,
+      // string d. id1 is the sender's real player id (matches cell.ownerId/
+      // WorldData.pID namespace) - needed so a chat message's nick can be
+      // right-clicked into the same party-invite menu as a map cell.
       const mz = yn.readInt32();
       yn.readInt32();
-      yn.readUInt8();
-      yn.readUInt8();
-      yn.readUInt8();
+      const vip = yn.readUInt8();
+      yn.readStringZeroUtf8();
+      const cr = yn.readUInt8();
+      const cg = yn.readUInt8();
+      const cb2 = yn.readUInt8();
       var cb = yn.readStringZeroUtf8().replace("[]", "");
       var pv = yn.readStringZeroUtf8();
       yn.readStringZeroUtf8();
-      Notifications.gameChat(cb, pv, mz);
+      yn.readUInt8();
+      const muted = yn.readUInt8();
+      yn.readStringZeroUtf8();
+      Notifications.gameChat(cb, pv, mz, { r: cr, g: cg, b: cb2, vip: !!vip, muted: !!muted });
     }
     static ["worldUpdate"](vi, vd = 1) {
       GameLoop.refreshTime();
@@ -5688,7 +5848,9 @@
         akq.y = tz;
         akq.radius = wn;
         akq.lastUpdateTime = GameLoop.time;
-        ajl = vi.readUInt8();
+        // The 2026 protocol widened the per-cell flags word from 8 to 16
+        // bits (adds vip/gold/sweet bits at 256/512/1024) - must read 16.
+        ajl = vi.readUInt16();
         sf = !!(1 & ajl);
         alm = !!(4 & ajl);
         alx = !!(8 & ajl);
@@ -5730,6 +5892,7 @@
         }
         akq.nick = alx ? vi.readStringZeroUtf8() : null;
         akq.bNick = ale ? vi.readStringZeroUtf8() : null;
+        akq.vip = !!(256 & ajl);
         akq.isVirus = sf;
         akq.isEjected = jd;
         // classify AFTER isVirus/isEjected/ownerId are up to date for this
@@ -5869,27 +6032,24 @@
         return;
       }
       this.initPingLoop(adx);
-      if (3 === adx) {
-        WsConnection.connected3 = true;
-        WsConnection.backupReady = true;
-        WsConnection.backupConnecting = false;
-        console.log("Drag+: Standby Tab 3 ready");
-        WsConnection.setBackupPhase("Ready");
-        WsConnection.pumpPromotionQueue();
-        return;
-      }
       this.accountPacketSent = false;
       Camera.isSpectating = false;
       Camera.freeSpectate = false;
       console.log("Connected to: " + WsConnection.ip);
       if (1 === adx) {
         WsConnection.connected = true;
+        WsConnection.tab1Authed = true;
+        WsConnection.queueTab2();
       } else if (2 === adx) {
         WsConnection.connected2 = true;
+        // Tab 2 just became playable: if Tab 1 already has a cell, bring
+        // Tab 2's cell back automatically so the pair stays together.
+        if (Player._isAlive) {
+          setTimeout(() => this.spawnTab(2), 400);
+        }
       }
       if (WsConnection.connected && WsConnection.connected2) {
         this.handleDisabledProperty(false);
-        WsConnection.scheduleBackup();
       }
     }
     static ["handleDisabledProperty"](du) {
@@ -5921,8 +6081,36 @@
       [1, 2, 3].forEach((slot) => this.stopPingLoop(slot));
     }
     static ["handshake1"](ahn) {
-      const px = new Uint8Array([255, 0, 0]);
-      WsConnection.send(px, ahn);
+      // Login packet: [255] + UTF-16LE(string) + zero terminator (00 00).
+      // Guest (no account) sends an empty string -> [255, 0, 0]. A logged-in
+      // account sends [255, unicode(uuid|gameToken), 0, 0].
+      // Each tab carries its OWN account: the game server allows a single
+      // connection per account (concurrent-login protection) and, since the
+      // last update, kicks every second guest connection from the same IP
+      // ("New connection from this browser"). Tab 1 uses slot 1, Tab 2 uses
+      // slot 2 (falling back to guest).
+      const str = 1 === Number(ahn) ? Account.loginStringFor(1) : Account.loginStringFor(2);
+      console.log("Drag+ Login packet (tab " + ahn + "): " + (str ? (str.length > 24 ? str.slice(0, 24) + "..." : str) : "guest"));
+      if (!str) {
+        const px = new Uint8Array([255, 0, 0]);
+        WsConnection.send(px, ahn);
+        return;
+      }
+      const bytes = new Uint8Array(3 + str.length * 2);
+      bytes[0] = 255;
+      for (let i = 0; i < str.length; i++) {
+        const cc = str.charCodeAt(i);
+        bytes[1 + i * 2] = cc & 0xff;
+        bytes[2 + i * 2] = (cc >> 8) & 0xff;
+      }
+      WsConnection.send(bytes, ahn);
+    }
+    static ["resendLogin"]() {
+      [1, 2].forEach((tab) => {
+        if ((1 === tab && WsConnection.connected) || (2 === tab && WsConnection.connected2)) {
+          this.handshake1(tab);
+        }
+      });
     }
     static async ["handshake2"](oq) {
       if (3 !== oq && WsConnection.connected && WsConnection.connected2) {
@@ -5933,6 +6121,7 @@
         add = await WsConnection.getToken(oq);
       } catch (nb) {
         console.log("Multibox: failed to get captcha token for tab " + oq + ":", nb);
+        Notifications.warn("Drag+", "Captcha failed for Tab " + oq + " - retrying the connection.");
         return false;
       }
       var fj = new DataView(new ArrayBuffer(add.length + 3));
@@ -5966,6 +6155,15 @@
       if (command === "/kill" || command === "/recycle") {
         WsConnection.recycleActiveCell();
         return;
+      }
+      // Only Tab 1 carries the logged-in account, so route chat there
+      // (guests on Tabs 2/3 get rejected by the server anyway). Fall back
+      // to the active tab if Tab 1 is not currently connected.
+      if (Account.loggedIn) {
+        jj = 1;
+        if (!this.chekConnection(jj)) {
+          jj = Player.typeID;
+        }
       }
       if (this.chekConnection(jj)) {
         const gh = unescape(encodeURIComponent(am));
@@ -6010,10 +6208,11 @@
       const n = bTab || Player.typeID;
       if (this.chekConnection(n) && ((1 === n && !Player._isAlive) || (2 === n && !Player._isAlive2))) {
         Camera.isSpectating = false;
-        if ("" === Player.nick) {
-          Player.nick = "Unnamed cell";
+        let xnick = 2 === n && Player.nick2 ? Player.nick2 : Player.nick;
+        if ("" === xnick) {
+          xnick = "An unnamed cell";
         }
-        let xt = unescape(encodeURIComponent(Player.nick));
+        let xt = unescape(encodeURIComponent(xnick));
         let h = unescape(encodeURIComponent("free/" + TeamList.arbSkin));
         const ul = {
           n: xt,
@@ -6021,6 +6220,12 @@
         if (Player.arbSkin) {
           ul.s = h;
           ul.w = "";
+        }
+        // VIP flag: the real client sends v:true in the spawn/Name packet so
+        // the server marks the connection as VIP (gold color + crown on the
+        // cell, isVip on its chat messages). Tab 1 carries the account.
+        if (1 === n && Account.isVip()) {
+          ul.v = true;
         }
         const ur = JSON.stringify(ul);
         const ng = ur.length;
@@ -6099,6 +6304,511 @@
       }
     }
   }
+  class Account {
+    static ["init"]() {
+      this.uuid = localStorage.getItem("active_session_id") || "";
+      this.nick = localStorage.getItem("active_session_nick") || "";
+      this.gameToken = null;
+      this.gameTokenAt = 0;
+      this.levels = null;
+      this.xp = -1;
+      this.level = 0;
+      this.levelAnnounced = false;
+      this.coins = 0;
+      this.sweets = 0;
+      this.vipEndAt = null;
+      this.xpBoost = null;
+      this.massBoost = null;
+      this._xpPoll = null;
+      this._tokenLoop = null;
+      this.slot1 = this.readSlot("dragplus_account_1");
+      this.slot2 = this.readSlot("dragplus_account_2");
+      this.gameToken1 = null;
+      this.gameTokenAt1 = 0;
+      this.gameToken2 = null;
+      this.gameTokenAt2 = 0;
+      window.authResponse = (res) => {
+        try {
+          this.onAuthResponse(res);
+        } catch (e) {
+          console.log("authResponse error", e);
+        }
+      };
+      window.addEventListener("storage", (e) => this.handleStorageChange(e));
+      this.bindUI();
+      this.updateUI();
+      if (this.loggedIn) {
+        this.refreshGameToken();
+        this.loadLevels();
+        this.startXpPoll();
+      }
+      this.captureCurrentSession();
+      this.startTokenLoop();
+      this.updateUI();
+    }
+    static ["readCookie"](name) {
+      const parts = ("; " + document.cookie).split("; " + name + "=");
+      return 2 === parts.length ? parts.pop().split(";").shift() : "";
+    }
+    static ["readSlot"](key) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return null;
+        const obj = JSON.parse(raw);
+        if (obj && obj.uuid) return obj;
+      } catch (e) {}
+      return null;
+    }
+    static ["writeSlot"](key, obj) {
+      try {
+        localStorage.setItem(key, JSON.stringify(obj));
+      } catch (e) {}
+    }
+    static ["captureCurrentSession"]() {
+      // The php/Auth.php popup logs the browser into one account at a time
+      // (PHPSESSID + optional access_token cookie). Every successful login
+      // is captured here: the first account becomes slot 1 (Tab 1), a
+      // DIFFERENT account becomes slot 2 (Tab 2). Game tokens are fetched
+      // right away while the browser session belongs to that account.
+      const uuid = this.uuid;
+      if (!uuid || "logout" === uuid) return 0;
+      let slot;
+      if (this.slot1 && this.slot1.uuid === uuid) {
+        slot = 1;
+      } else if (!this.slot1) {
+        slot = 1;
+      } else {
+        slot = 2;
+      }
+      const entry = { uuid: uuid, nick: this.nick, accessToken: "" };
+      entry.accessToken = this.lastAuthAccessToken || this.readCookie("access_token") || "";
+      if (1 === slot) {
+        this.slot1 = entry;
+        this.writeSlot("dragplus_account_1", entry);
+      } else {
+        this.slot2 = entry;
+        this.writeSlot("dragplus_account_2", entry);
+        this.gameToken2 = null;
+        this.gameTokenAt2 = 0;
+      }
+      this.fetchSlotToken(slot);
+      // The access_token cookie can land a moment after the popup callback
+      // fires - retry reading it a few times and upgrade the slot if found.
+      const retries = [800, 2500, 6000];
+      for (const delay of retries) {
+        setTimeout(() => {
+          const at = this.readCookie("access_token");
+          if (!at) return;
+          const cur = 1 === slot ? this.slot1 : this.slot2;
+          if (!cur || cur.uuid !== uuid) return;
+          if (!cur.accessToken) {
+            cur.accessToken = at;
+            this.writeSlot(1 === slot ? "dragplus_account_1" : "dragplus_account_2", cur);
+            this.fetchSlotToken(slot);
+          }
+        }, delay);
+      }
+      this.updateUI();
+      // Account captured mid-game: kick the Tab 2 connection gate so it
+      // opens as soon as Tab 1 carries this account.
+      if (WsConnection && WsConnection.connected && !WsConnection.ws2) {
+        WsConnection.queueTab2();
+      }
+      return slot;
+    }
+    static ["startTokenLoop"]() {
+      if (this._tokenLoop) return;
+      const tick = () => {
+        this.fetchSlotToken(1);
+        this.fetchSlotToken(2);
+        this.warnStaleSlot(1);
+        this.warnStaleSlot(2);
+      };
+      tick();
+      this._tokenLoop = setInterval(tick, 180000);
+    }
+    static ["warnStaleSlot"](slot) {
+      const entry = 1 === slot ? this.slot1 : this.slot2;
+      const tk = 1 === slot ? this.gameToken1 : this.gameToken2;
+      const at = 1 === slot ? this.gameTokenAt1 : this.gameTokenAt2;
+      if (!entry || !tk) return;
+      this._staleWarned = this._staleWarned || {};
+      if (!entry.accessToken && this.uuid && "logout" !== this.uuid && this.uuid !== entry.uuid && 300000 < Date.now() - at) {
+        if (!this._staleWarned[slot]) {
+          this._staleWarned[slot] = true;
+          Notifications.warn("Login", "Tab " + slot + " account game token expired and cannot auto-refresh (browser session is on the other account). Login again with that account to refresh it.");
+        }
+      } else {
+        this._staleWarned[slot] = false;
+      }
+    }
+    static ["fetchSlotToken"](slot) {
+      const entry = 1 === slot ? this.slot1 : this.slot2;
+      if (!entry || !entry.uuid) return;
+      if (1 === slot && this.gameToken1 && Date.now() - this.gameTokenAt1 < 150000) return;
+      if (2 === slot && this.gameToken2 && Date.now() - this.gameTokenAt2 < 150000) return;
+      // Without a saved access_token the API authenticates through the
+      // browser session cookie - only fetch while that session belongs to
+      // THIS slot's account, otherwise we would get the wrong account token.
+      if (!entry.accessToken && this.uuid && "logout" !== this.uuid && this.uuid !== entry.uuid) return;
+      this._slotFetching = this._slotFetching || {};
+      if (this._slotFetching[slot]) return;
+      this._slotFetching[slot] = true;
+      this._slotFetchFail = this._slotFetchFail || {};
+      const opts = entry.accessToken
+        ? { credentials: "omit", headers: { Authorization: "Bearer " + entry.accessToken } }
+        : { credentials: "include" };
+      fetch("https://3rb.io/api/auth/game-token", opts)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          this._slotFetching[slot] = false;
+          const tk = d && (d.token || (d.data && d.data.token));
+          if (!tk) {
+            this._slotFetchFail[slot] = (this._slotFetchFail[slot] || 0) + 1;
+            Notifications.warn("Login", "Game token failed for account slot " + slot + (3 === this._slotFetchFail[slot] ? " - the saved account token looks expired, please login again or use DRAG_PLUS.clearAccounts()" : ""));
+            return;
+          }
+          this._slotFetchFail[slot] = 0;
+          if (1 === slot) {
+            this.gameToken1 = tk;
+            this.gameTokenAt1 = Date.now();
+          } else {
+            this.gameToken2 = tk;
+            this.gameTokenAt2 = Date.now();
+          }
+          Notifications.command("Login", "Game token ready (Tab " + slot + " account)");
+          PacketSender.resendLogin();
+          if (WsConnection && WsConnection.connected && !WsConnection.ws2) {
+            WsConnection.queueTab2();
+          }
+        })
+        .catch(() => {
+          this._slotFetching[slot] = false;
+          this._slotFetchFail[slot] = (this._slotFetchFail[slot] || 0) + 1;
+        });
+    }
+    static ["loginStringFor"](slot) {
+      if (1 === slot) {
+        if (!this.slot1 || !this.slot1.uuid) return "";
+        return this.gameToken1 ? this.slot1.uuid + "|" + this.gameToken1 : this.slot1.uuid;
+      }
+      if (!this.slot2 || !this.slot2.uuid) return "";
+      // The server allows one connection per account: never send the same
+      // account from Tab 2 or it will be kicked in a reconnect loop.
+      if (this.slot1 && this.slot1.uuid === this.slot2.uuid) return "";
+      return this.gameToken2 ? this.slot2.uuid + "|" + this.gameToken2 : this.slot2.uuid;
+    }
+    static ["slots"]() {
+      return {
+        tab1: this.slot1 ? { uuid: this.slot1.uuid, nick: this.slot1.nick, hasToken: !!this.slot1.accessToken, gameToken: !!this.gameToken1 } : null,
+        tab2: this.slot2 ? { uuid: this.slot2.uuid, nick: this.slot2.nick, hasToken: !!this.slot2.accessToken, gameToken: !!this.gameToken2 } : null,
+      };
+    }
+    static ["setSlot"](slot, uuid, accessToken) {
+      const entry = { uuid: String(uuid || ""), nick: "", accessToken: String(accessToken || "") };
+      if (1 === slot) {
+        this.slot1 = entry.uuid ? entry : null;
+        this.writeSlot("dragplus_account_1", this.slot1);
+        this.gameToken1 = null;
+        this.gameTokenAt1 = 0;
+      } else {
+        this.slot2 = entry.uuid ? entry : null;
+        this.writeSlot("dragplus_account_2", this.slot2);
+        this.gameToken2 = null;
+        this.gameTokenAt2 = 0;
+      }
+      this.fetchSlotToken(slot);
+      this.updateUI();
+      PacketSender.resendLogin();
+    }
+    static ["clearSlots"]() {
+      this.slot1 = null;
+      this.slot2 = null;
+      this.gameToken1 = null;
+      this.gameToken2 = null;
+      localStorage.removeItem("dragplus_account_1");
+      localStorage.removeItem("dragplus_account_2");
+      this.updateUI();
+      PacketSender.resendLogin();
+    }
+    static get ["loggedIn"]() {
+      return !!this.uuid && "logout" !== this.uuid;
+    }
+    static ["buildLoginString"](u) {
+      if (!u) {
+        return "";
+      }
+      if ("logout" === u || 0 === u.indexOf("locked-")) {
+        return u;
+      }
+      return this.gameToken ? u + "|" + this.gameToken : u;
+    }
+    static ["openLogin"](provider) {
+      // Match the game's own popup (createWindow) exactly: same window name
+      // "3rb.io", same "scrollbars=yes, width=..., height=..., top=..., left=..."
+      // features string. window.open from a Tampermonkey sandbox is often a
+      // no-op (silently returns null, nothing opens), so route through the
+      // real page window (unsafeWindow) when available - the popup needs the
+      // real opener so php/Auth.php can call window.opener.authResponse().
+      const w = "undefined" !== typeof unsafeWindow ? unsafeWindow : window;
+      const top = (w.screenTop || w.screenY || 0) + ((w.outerHeight || w.innerHeight || 0) - 520) / 2;
+      const left = (w.screenLeft || w.screenX || 0) + ((w.outerWidth || w.innerWidth || 0) - 400) / 2;
+      const features = "scrollbars=yes, width=400, height=520, top=" + top + ", left=" + left;
+      const win = w.open("php/Auth.php?provider=" + provider, "3rb.io", features);
+      if (!win) {
+        Notifications.warn("Login", "Login popup was blocked - please allow popups for 3rb.io and try again.");
+      }
+      return win;
+    }
+    static ["onAuthResponse"](e) {
+      if (!e || e.error) {
+        Notifications.warn("Login", (e && e.error) || "Login error!");
+        return;
+      }
+      this.uuid = e.uuid || "";
+      this.nick = e.Name || "";
+      if (this.uuid) {
+        localStorage.setItem("active_session_id", this.uuid);
+        localStorage.setItem("active_session_nick", this.nick);
+      }
+      if (e && (e.access_token || e.accessToken)) {
+        this.lastAuthAccessToken = e.access_token || e.accessToken;
+      }
+      this.captureCurrentSession();
+      this.gameToken = null;
+      this.gameTokenAt = 0;
+      this.levels = (e && e.Shop && e.Shop.Levels) || this.levels;
+      this.coins = parseInt(e && e.Coins) || 0;
+      this.sweets = parseInt(e && e.Sweets) || 0;
+      if (e && e.vipEndAt) this.vipEndAt = e.vipEndAt;
+      if (e && e["XP Boost"]) this.xpBoost = e["XP Boost"];
+      if (e && e["Mass Boost"]) this.massBoost = e["Mass Boost"];
+      this.refreshGameToken();
+      this.updateUI();
+      PacketSender.resendLogin();
+      const axp = parseInt(e && e.XP);
+      if (!isNaN(axp) && 0 <= axp) {
+        this.setXp(axp);
+      }
+      this.loadLevels();
+      this.startXpPoll();
+    }
+    static ["refreshGameToken"]() {
+      if (!this.loggedIn) {
+        this.gameToken = null;
+        return;
+      }
+      if (this.gameToken && Date.now() - this.gameTokenAt < 24e4) {
+        return;
+      }
+      fetch("https://3rb.io/api/auth/game-token", { credentials: "include" })
+        .then((r) => {
+          if (!r.ok) {
+            Notifications.warn("Login", "Game token failed (HTTP " + r.status + ") - chat may stay locked");
+            throw new Error("game-token status " + r.status);
+          }
+          return r.json();
+        })
+        .then((d) => {
+          const tk = d && (d.token || (d.data && d.data.token));
+          if (tk) {
+            this.gameToken = tk;
+            this.gameTokenAt = Date.now();
+            Notifications.command("Login", "Game token ready");
+            PacketSender.resendLogin();
+          } else {
+            Notifications.warn("Login", "Game token: no token in response");
+          }
+        })
+        .catch(() => {});
+    }
+    static ["loadLevels"]() {
+      // Level thresholds come from the account's Shop.Levels table. Prefer
+      // what php/Auth.php returns in authResponse; fall back to auth/me.
+      if (!this.loggedIn) return;
+      if (this.levels && this.levels.length) {
+        this.announceLevel();
+        return;
+      }
+      this.refreshAccountData();
+    }
+    static ["startXpPoll"]() {
+      // Lightweight live account refresh (one small request every 40s) so the
+      // XP/level updates while playing without needing a logout/login. Safe
+      // for guests: only runs while logged in. Kept tiny to avoid any lag.
+      if (this._xpPoll || !this.loggedIn) return;
+      this._xpPoll = setInterval(() => {
+        if (!this.loggedIn) {
+          this.stopXpPoll();
+          return;
+        }
+        this.refreshAccountData();
+      }, 40000);
+    }
+    static ["stopXpPoll"]() {
+      if (this._xpPoll) {
+        clearInterval(this._xpPoll);
+        this._xpPoll = null;
+      }
+    }
+    static ["refreshAccountData"]() {
+      if (!this.loggedIn) return;
+      fetch("https://3rb.io/api/auth/me", { credentials: "include" })
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error("status " + r.status))))
+        .then((d) => {
+          const body = d && d.data ? d.data : d;
+          if (body) {
+            this.applyAccountData(body);
+          }
+        })
+        .catch(() => {});
+    }
+    static ["applyAccountData"](body) {
+      if (body.Shop && body.Shop.Levels && body.Shop.Levels.length) {
+        this.levels = body.Shop.Levels;
+      }
+      const xp = parseInt(body.XP);
+      if (!isNaN(xp) && 0 <= xp) {
+        this.setXp(xp);
+      }
+      const coins = parseInt(body.Coins);
+      if (!isNaN(coins) && 0 <= coins) {
+        this.coins = coins;
+      }
+      const sweets = parseInt(body.Sweets);
+      if (!isNaN(sweets) && 0 <= sweets) {
+        this.sweets = sweets;
+      }
+      if (body.vipEndAt) this.vipEndAt = body.vipEndAt;
+      if (body["XP Boost"]) this.xpBoost = body["XP Boost"];
+      if (body["Mass Boost"]) this.massBoost = body["Mass Boost"];
+      this.updateUI();
+    }
+    static ["isVip"]() {
+      if (!this.vipEndAt) return false;
+      const t = new Date(this.vipEndAt).getTime();
+      return !isNaN(t) && t > Date.now();
+    }
+    static ["boostActive"](val) {
+      if (!val) return false;
+      const t = new Date(val).getTime();
+      return isNaN(t) || t > Date.now();
+    }
+    static ["levelForXp"](xp) {
+      let cur = null;
+      for (let i = 0; i < this.levels.length; i++) {
+        if (this.levels[i].XP <= xp) {
+          cur = this.levels[i];
+        } else {
+          break;
+        }
+      }
+      return cur;
+    }
+    static ["setXp"](xp) {
+      if (0 > xp || !this.levels || !this.levels.length) return;
+      const wasKnown = 0 <= this.xp;
+      const oldLevel = this.level;
+      this.xp = xp;
+      const cur = this.levelForXp(xp);
+      if (!cur) return;
+      this.level = cur.Level;
+      if (wasKnown && oldLevel && cur.Level > oldLevel) {
+        const coins = parseInt(cur.Coins);
+        if (0 < coins) {
+          this.coins += coins;
+          this.updateUI();
+        }
+        Notifications.command(
+          "Level",
+          "Level Up! You reached level " + cur.Level + (0 < coins ? " (+" + coins.toLocaleString() + " Coins)" : "")
+        );
+      }
+      this.announceLevel();
+    }
+    static ["announceLevel"]() {
+      if (!this.levels || !this.levels.length) return;
+      if (this.levelAnnounced || 0 > this.xp) return;
+      this.levelAnnounced = true;
+      Notifications.command("Level", "Your level: " + this.level + " (" + this.xp + " XP)");
+    }
+    static ["logout"]() {
+      this.stopXpPoll();
+      this.uuid = "logout";
+      this.gameToken = null;
+      PacketSender.resendLogin();
+      this.uuid = "";
+      this.nick = "";
+      this.gameTokenAt = 0;
+      localStorage.removeItem("active_session_id");
+      localStorage.removeItem("active_session_nick");
+      fetch("php/Auth.php?logout", { credentials: "include" }).catch(() => {});
+      this.clearSlots();
+      this.updateUI();
+    }
+    static ["handleStorageChange"](e) {
+      if ("active_session_id" !== e.key) {
+        return;
+      }
+      const v = localStorage.getItem("active_session_id");
+      if (v === this.uuid) {
+        return;
+      }
+      this.uuid = v || "";
+      this.nick = this.uuid ? localStorage.getItem("active_session_nick") || "" : "";
+      this.gameToken = null;
+      this.gameTokenAt = 0;
+      if (this.loggedIn) {
+        this.refreshGameToken();
+        this.startXpPoll();
+      }
+      this.updateUI();
+      PacketSender.resendLogin();
+    }
+    static ["bindUI"]() {
+      // Google/Discord login are native anchors (href + target="_blank" +
+      // rel="opener") so the browser opens the Auth.php popup itself - no
+      // window.open needed (the Tampermonkey sandbox swallows those). The
+      // relay/authResponse still wires up through window.opener on the page.
+      $(document).on("click", "#account-status-logout", (e) => {
+        e.preventDefault();
+        this.logout();
+      });
+    }
+    static ["updateUI"]() {
+      const tab2 = document.getElementById("account-tab2");
+      if (tab2) {
+        const s1 = this.slot1 ? (this.slot1.nick || this.slot1.uuid.slice(0, 12)) : "none";
+        const s2 = this.slot2 ? (this.slot2.nick || this.slot2.uuid.slice(0, 12)) : "none";
+        tab2.textContent = "Tab1: " + s1 + "   |   Tab2: " + s2;
+      }
+      if (!this.loggedIn) {
+        $("#account-login").show();
+        $("#account-login2").hide();
+        $("#account-status-info").text("Anonymous");
+        $("#account-status-logout").hide();
+        return;
+      }
+      $("#account-login").hide();
+      $("#account-login2").show();
+      const parts = [];
+      parts.push("👤 " + (this.nick || (this.uuid.length > 10 ? this.uuid.slice(0, 10) + "..." : this.uuid)));
+      if (this.isVip()) {
+        parts.push("[VIP]");
+      }
+      parts.push("💰 " + (this.coins || 0).toLocaleString());
+      if (0 < this.sweets) {
+        parts.push("🍬 " + this.sweets.toLocaleString());
+      }
+      if (this.boostActive(this.xpBoost)) {
+        parts.push("⚡ XP Boost");
+      } else if (this.boostActive(this.massBoost)) {
+        parts.push("⚡ Mass Boost");
+      }
+      $("#account-status-info").text(parts.join(" │ "));
+      $("#account-status-logout").show();
+    }
+  }
   class RelayWs {
     static ["init"]() {
       this.ip = "";
@@ -6110,7 +6820,7 @@
       // reconnect state machine dropping in-flight sends) was a symptom of
       // that abstraction layer, not the actual network. A raw WebSocket
       // has none of that hidden machinery - what you see here IS the
-      // connection logic. MUST be wss:// (not https://): beta.3rb.io is
+      // connection logic. MUST be wss:// (not https://): 3rb.io is
       // loaded over HTTPS, and browsers silently drop any plain ws://
       // connection an HTTPS page tries to open (mixed content) - the
       // socket just never opens, no error is ever thrown. If this is
@@ -6360,7 +7070,9 @@
         const abw = ri.readUInt8();
         if (1 & abw) {
           const vf = ri.readStringZeroUtf8();
-          afb.nick = vf;
+          const vg = vf.split("|");
+          afb.nick = vg[0] || "";
+          afb.nick2 = vg[1] || "";
         }
         if (2 & abw) {
           const aey = ri.readUInt8();
@@ -6405,7 +7117,9 @@
       for (let xg = vy.readUInt8(); xg--; ) {
         const ada = vy.readUInt32();
         const ami = RelayData.newPlayer(ada);
-        ami.nick = vy.readStringZeroUtf8();
+        const avn = vy.readStringZeroUtf8().split("|");
+        ami.nick = avn[0] || "";
+        ami.nick2 = avn[1] || "";
         const rk = vy.readUInt8();
         const kz = vy.readUInt8();
         const jh = vy.readUInt8();
@@ -6462,7 +7176,7 @@
     }
     static ["nick"]() {
       if (RelayWs.connected) {
-        const id = unescape(encodeURIComponent(Player.nick));
+        const id = unescape(encodeURIComponent([Player.nick, Player.nick2].join("|")));
         let aes = id.length;
         const vo = this.createView(2 + id.length);
         for (vo.setUint8(0, 1, true); aes--; ) {
@@ -6965,7 +7679,7 @@
         ? "./res/skins/free/" + this.arbSkin.replace(/free\/|.png/g, "") + ".png"
         : "";
       const k1 = this.skinKey(Player.nick, Player.colorHex);
-      const k2 = this.skinKey(Player.nick, Player.colorHex2);
+      const k2 = this.skinKey(Player.nick2 || Player.nick, Player.colorHex2);
       if (u1) {
         this.skinMap.set(k1, u1);
       } else if (arb) {
@@ -6988,7 +7702,7 @@
             const t2 =
               agl.skin2 && !agl.skin2.includes("XXXXXXX") ? this.code2Url(agl.skin2) : t1;
             if (t2) {
-              this.skinMap.set(this.skinKey(agl.nick, agl.skin2Color), t2);
+              this.skinMap.set(this.skinKey(agl.nick2 || agl.nick, agl.skin2Color), t2);
             }
           }
           if (t1) {
@@ -6998,6 +7712,7 @@
     }
     static ["skinKey"](nick, colorHex) {
       let base = nick.substring(nick.indexOf("}") + 1);
+      base = base.replace(/^\[[^\]]*\]\s*/, "");
       base = base.replace("%*^", "");
       return base + colorHex;
     }
@@ -7145,7 +7860,7 @@
       }
     }
     static async ["getKnownSkins"]() {
-      var ne = await fetch("https://beta.3rb.io/php/Skins.php?type=free");
+      var ne = await fetch("https://3rb.io/php/Skins.php?type=free");
       var acb = await ne.json();
       var ts = Date.now();
       for (let nh = 0; nh < acb.length; nh++) {
@@ -7180,6 +7895,7 @@
       Camera.init();
       RelayData.init();
       PartyManager.init();
+      Account.init();
       Renderer.init();
       this.loop = new RafLoop(() => {
         this.run();
